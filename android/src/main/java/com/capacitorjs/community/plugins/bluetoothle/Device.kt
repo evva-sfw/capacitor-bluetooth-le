@@ -1,11 +1,11 @@
 package com.capacitorjs.community.plugins.bluetoothle
 
+import CapBleManager
 import android.bluetooth.*
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import com.getcapacitor.Logger
@@ -29,147 +29,15 @@ class Device(
         private const val STATE_CONNECTING = 1
         private const val STATE_CONNECTED = 2
         private const val CLIENT_CHARACTERISTIC_CONFIG = "00002902-0000-1000-8000-00805f9b34fb"
-        private const val REQUEST_MTU = 512
     }
 
+    private var manager = CapBleManager(context)
     private var connectionState = STATE_DISCONNECTED
     private var device: BluetoothDevice = bluetoothAdapter.getRemoteDevice(address)
     private var bluetoothGatt: BluetoothGatt? = null
     private var callbackMap = HashMap<String, ((CallbackResponse) -> Unit)>()
     private var timeoutMap = HashMap<String, Handler>()
     private var bondStateReceiver: BroadcastReceiver? = null
-
-    private val gattCallback: BluetoothGattCallback = object : BluetoothGattCallback() {
-        override fun onConnectionStateChange(
-            gatt: BluetoothGatt, status: Int, newState: Int
-        ) {
-            if (newState == BluetoothProfile.STATE_CONNECTED) {
-                connectionState = STATE_CONNECTED
-                // service discovery is required to use services
-                Logger.debug(TAG, "Connected to GATT server. Starting service discovery.")
-                val result = bluetoothGatt?.discoverServices()
-                if (result != true) {
-                    reject("connect", "Starting service discovery failed.")
-                }
-            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                connectionState = STATE_DISCONNECTED
-                onDisconnect()
-                bluetoothGatt?.close()
-                bluetoothGatt = null
-                Logger.debug(TAG, "Disconnected from GATT server.")
-                resolve("disconnect", "Disconnected.")
-            }
-        }
-
-        override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
-            super.onServicesDiscovered(gatt, status)
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                resolve("discoverServices", "Services discovered.")
-                if (connectCallOngoing()) {
-                    // Try requesting a larger MTU. Maximally supported MTU will be selected.
-                    requestMtu(REQUEST_MTU)
-                }
-            } else {
-                reject("discoverServices", "Service discovery failed.")
-                reject("connect", "Service discovery failed.")
-            }
-        }
-
-        override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
-            super.onMtuChanged(gatt, mtu, status)
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                Logger.debug(TAG, "MTU changed: $mtu")
-            } else {
-                Logger.debug(TAG, "MTU change failed: $mtu")
-            }
-            resolve("connect", "Connected.")
-        }
-
-        override fun onReadRemoteRssi(gatt: BluetoothGatt?, rssi: Int, status: Int) {
-            super.onReadRemoteRssi(gatt, rssi, status)
-            val key = "readRssi"
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                resolve(key, rssi.toString())
-            } else {
-                reject(key, "Reading RSSI failed.")
-            }
-        }
-
-        override fun onCharacteristicRead(
-            gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int
-        ) {
-            super.onCharacteristicRead(gatt, characteristic, status)
-            val key = "read|${characteristic.service.uuid}|${characteristic.uuid}"
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                val data = characteristic.value
-                if (data != null) {
-                    val value = bytesToString(data)
-                    resolve(key, value)
-                } else {
-                    reject(key, "No data received while reading characteristic.")
-                }
-            } else {
-                reject(key, "Reading characteristic failed.")
-            }
-        }
-
-        override fun onCharacteristicWrite(
-            gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int
-        ) {
-            super.onCharacteristicWrite(gatt, characteristic, status)
-            val key = "write|${characteristic.service.uuid}|${characteristic.uuid}"
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                resolve(key, "Characteristic successfully written.")
-            } else {
-                reject(key, "Writing characteristic failed.")
-            }
-
-        }
-
-        override fun onCharacteristicChanged(
-            gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic
-        ) {
-            super.onCharacteristicChanged(gatt, characteristic)
-            val notifyKey = "notification|${characteristic.service.uuid}|${characteristic.uuid}"
-            val data = characteristic.value
-            if (data != null) {
-                val value = bytesToString(data)
-                callbackMap[notifyKey]?.invoke(CallbackResponse(true, value))
-            }
-        }
-
-        override fun onDescriptorRead(
-            gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int
-        ) {
-            super.onDescriptorRead(gatt, descriptor, status)
-            val key =
-                "readDescriptor|${descriptor.characteristic.service.uuid}|${descriptor.characteristic.uuid}|${descriptor.uuid}"
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                val data = descriptor.value
-                if (data != null) {
-                    val value = bytesToString(data)
-                    resolve(key, value)
-                } else {
-                    reject(key, "No data received while reading descriptor.")
-                }
-            } else {
-                reject(key, "Reading descriptor failed.")
-            }
-        }
-
-        override fun onDescriptorWrite(
-            gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int
-        ) {
-            super.onDescriptorWrite(gatt, descriptor, status)
-            val key =
-                "writeDescriptor|${descriptor.characteristic.service.uuid}|${descriptor.characteristic.uuid}|${descriptor.uuid}"
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                resolve(key, "Descriptor successfully written.")
-            } else {
-                reject(key, "Writing descriptor failed.")
-            }
-        }
-    }
 
     fun getId(): String {
         return address
@@ -184,19 +52,15 @@ class Device(
     fun connect(
         timeout: Long, callback: (CallbackResponse) -> Unit
     ) {
-        val key = "connect"
-        callbackMap[key] = callback
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            bluetoothGatt = device.connectGatt(
-                context, false, gattCallback, BluetoothDevice.TRANSPORT_LE
-            )
-        } else {
-            bluetoothGatt = device.connectGatt(
-                context, false, gattCallback
-            )
-        }
         connectionState = STATE_CONNECTING
-        setConnectionTimeout(key, "Connection timeout.", bluetoothGatt, timeout)
+
+        Logger.debug("==== CONNECTING START ====")
+        this.manager.connect(device).timeout(timeout).await()
+        Logger.debug("==== CONNECTING END ====")
+
+        connectionState = STATE_CONNECTED
+
+        callback(CallbackResponse(true, "connected"))
     }
 
     private fun connectCallOngoing(): Boolean {
@@ -278,14 +142,12 @@ class Device(
     fun disconnect(
         timeout: Long, callback: (CallbackResponse) -> Unit
     ) {
-        val key = "disconnect"
-        callbackMap[key] = callback
-        if (bluetoothGatt == null) {
-            resolve(key, "Disconnected.")
-            return
-        }
-        bluetoothGatt?.disconnect()
-        setTimeout(key, "Disconnection timeout.", timeout)
+        Logger.debug("==== DISCONNECTING ====")
+        this.manager.disconnect().timeout(timeout).await()
+
+        connectionState = STATE_DISCONNECTED
+
+        callback(CallbackResponse(true, "disconnected"))
     }
 
     fun getServices(): MutableList<BluetoothGattService> {
@@ -341,20 +203,23 @@ class Device(
         timeout: Long,
         callback: (CallbackResponse) -> Unit
     ) {
-        val key = "read|$serviceUUID|$characteristicUUID"
-        callbackMap[key] = callback
-        val service = bluetoothGatt?.getService(serviceUUID)
+        Logger.debug("==== READ START ====")
+
+        val service = this.manager.getService(serviceUUID)
         val characteristic = service?.getCharacteristic(characteristicUUID)
-        if (characteristic == null) {
-            reject(key, "Characteristic not found.")
-            return
-        }
-        val result = bluetoothGatt?.readCharacteristic(characteristic)
-        if (result != true) {
-            reject(key, "Reading characteristic failed.")
-            return
-        }
-        setTimeout(key, "Read timeout.", timeout)
+        var data: ByteArray? = null
+
+        this.manager.readCharacteristic(characteristic).with { _, payload ->
+          Logger.debug("==== READ DATA ====")
+          Logger.debug("$payload")
+          data = payload.value
+        }.await()
+
+        Logger.debug("==== READ END ====")
+
+        // TODO: Handle timeout on read ...
+
+        callback(CallbackResponse(true, bytesToString(data ?: byteArrayOf())))
     }
 
     fun write(
@@ -365,23 +230,24 @@ class Device(
         timeout: Long,
         callback: (CallbackResponse) -> Unit
     ) {
-        val key = "write|$serviceUUID|$characteristicUUID"
-        callbackMap[key] = callback
-        val service = bluetoothGatt?.getService(serviceUUID)
+        Logger.debug("==== WRITE START ====")
+
+        val service = this.manager.getService(serviceUUID)
         val characteristic = service?.getCharacteristic(characteristicUUID)
-        if (characteristic == null) {
-            reject(key, "Characteristic not found.")
-            return
-        }
         val bytes = stringToBytes(value)
-        characteristic.value = bytes
-        characteristic.writeType = writeType
-        val result = bluetoothGatt?.writeCharacteristic(characteristic)
-        if (result != true) {
-            reject(key, "Writing characteristic failed.")
-            return
-        }
-        setTimeout(key, "Write timeout.", timeout)
+        var data: ByteArray? = null
+
+        this.manager.writeCharacteristic(characteristic, bytes, writeType).with { _, payload ->
+          Logger.debug("==== WRITE DATA ====")
+          Logger.debug("$payload")
+          data = payload.value
+        }.await()
+
+        Logger.debug("==== WRITE END ====")
+
+        // TODO: Handle timeout on write ...
+
+        callback(CallbackResponse(true, bytesToString(data ?: byteArrayOf())))
     }
 
     fun setNotifications(
@@ -519,21 +385,6 @@ class Device(
         val handler = Handler(Looper.getMainLooper())
         timeoutMap[key] = handler
         handler.postDelayed({
-            reject(key, message)
-        }, timeout)
-    }
-
-    private fun setConnectionTimeout(
-        key: String,
-        message: String,
-        gatt: BluetoothGatt?,
-        timeout: Long,
-    ) {
-        val handler = Handler(Looper.getMainLooper())
-        timeoutMap[key] = handler
-        handler.postDelayed({
-            gatt?.disconnect()
-            gatt?.close()
             reject(key, message)
         }, timeout)
     }
