@@ -257,47 +257,24 @@ class Device(
         notifyCallback: ((CallbackResponse) -> Unit)?,
         callback: (CallbackResponse) -> Unit,
     ) {
+
         val key = "writeDescriptor|$serviceUUID|$characteristicUUID|$CLIENT_CHARACTERISTIC_CONFIG"
-        val notifyKey = "notification|$serviceUUID|$characteristicUUID"
-        callbackMap[key] = callback
-        if (notifyCallback != null) {
-            callbackMap[notifyKey] = notifyCallback
-        }
-        val service = bluetoothGatt?.getService(serviceUUID)
+        val service = this.manager.getService(serviceUUID)
         val characteristic = service?.getCharacteristic(characteristicUUID)
         if (characteristic == null) {
             reject(key, "Characteristic not found.")
             return
         }
-
-        val result = bluetoothGatt?.setCharacteristicNotification(characteristic, enable)
-        if (result != true) {
-            reject(key, "Setting notification failed.")
-            return
-        }
-
-        val descriptor = characteristic.getDescriptor(UUID.fromString(CLIENT_CHARACTERISTIC_CONFIG))
-        if (descriptor == null) {
-            reject(key, "Setting notification failed.")
-            return
-        }
-
-        if (enable) {
-            if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
-                descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-            } else if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
-                descriptor.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+        this.manager.setNotificationCallback(characteristic).with { _, data ->
+            if (data.value != null) {
+                val value = String(data.value!!, Charsets.UTF_8)
+                notifyCallback?.invoke(CallbackResponse(true, value));
             }
-        } else {
-            descriptor.value = BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
         }
-
-        val resultDesc = bluetoothGatt?.writeDescriptor(descriptor)
-        if (resultDesc != true) {
-            reject(key, "Setting notification failed.")
-            return
+        if(enable) {
+            this.manager.enableNotifications(characteristic).await();
         }
-        // wait for onDescriptorWrite
+        callback(CallbackResponse(true, ""));
     }
 
     fun readDescriptor(

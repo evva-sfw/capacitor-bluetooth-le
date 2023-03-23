@@ -62,7 +62,7 @@ internal class CapBleManager(context: Context) : BleManager(context) {
       data: ByteArray?,
       writeType: Int
     ): WriteRequest {
-        return super.writeCharacteristic(characteristic, data, writeType)
+        return super.writeCharacteristic(characteristic, data, writeType).split()
     }
 
     public override fun ensureBond(): Request {
@@ -94,6 +94,10 @@ internal class CapBleManager(context: Context) : BleManager(context) {
 
     public override fun removeNotificationCallback(characteristic: BluetoothGattCharacteristic?) {
       super.removeNotificationCallback(characteristic)
+    }
+
+    public override fun enableNotifications(characteristic: BluetoothGattCharacteristic?): WriteRequest {
+        return super.enableNotifications(characteristic)
     }
 
 }
