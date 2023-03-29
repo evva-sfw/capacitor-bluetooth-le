@@ -515,19 +515,7 @@ class BluetoothLe : Plugin() {
 
     @PluginMethod
     fun discoverServices(call: PluginCall) {
-        val device = getDevice(call) ?: return
-        val timeout = call.getFloat("timeout", DEFAULT_TIMEOUT)!!.toLong()
-        device.discoverServices(timeout) { response ->
-            run {
-                if (response.success) {
-                    call.resolve()
-                } else {
-                    call.reject(response.value)
-                }
-            }
-        }
-
-
+        call.resolve()
     }
 
     @PluginMethod
@@ -844,9 +832,7 @@ class BluetoothLe : Plugin() {
         return try {
             val newDevice = Device(
                 activity.applicationContext, bluetoothAdapter!!, deviceId
-            ) {
-                onDisconnect(deviceId)
-            }
+            )
             deviceMap[deviceId] = newDevice
             newDevice
         } catch (e: IllegalArgumentException) {

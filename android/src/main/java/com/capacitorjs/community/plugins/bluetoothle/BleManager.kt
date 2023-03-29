@@ -30,11 +30,11 @@ internal class CapBleManager(context: Context) : BleManager(context) {
     }
 
     fun getGatt(): BluetoothGatt? {
-      return this.gatt
+        return this.gatt
     }
 
     fun getService(uuid: UUID): BluetoothGattService? {
-      return this.gatt?.getService(uuid)
+        return this.gatt?.getService(uuid)
     }
 
     override fun initialize() {
@@ -58,46 +58,50 @@ internal class CapBleManager(context: Context) : BleManager(context) {
     }
 
     public override fun writeCharacteristic(
-      characteristic: BluetoothGattCharacteristic?,
-      data: ByteArray?,
-      writeType: Int
+        characteristic: BluetoothGattCharacteristic?,
+        data: ByteArray?,
+        writeType: Int
     ): WriteRequest {
         return super.writeCharacteristic(characteristic, data, writeType).split()
     }
 
     public override fun ensureBond(): Request {
-      return super.ensureBond()
+        return super.ensureBond()
     }
 
     public override fun createBondInsecure(): Request {
-      return super.createBondInsecure()
+        return super.createBondInsecure()
     }
 
+
     public override fun removeBond(): Request {
-      return super.removeBond()
+        return super.removeBond()
     }
 
     public override fun readDescriptor(descriptor: BluetoothGattDescriptor?): ReadRequest {
-      return super.readDescriptor(descriptor)
+        return super.readDescriptor(descriptor)
     }
 
     public override fun writeDescriptor(
-      descriptor: BluetoothGattDescriptor?,
-      data: ByteArray?
+        descriptor: BluetoothGattDescriptor?,
+        data: ByteArray?
     ): WriteRequest {
-      return super.writeDescriptor(descriptor, data)
+        return super.writeDescriptor(descriptor, data)
     }
 
     public override fun setNotificationCallback(characteristic: BluetoothGattCharacteristic?): ValueChangedCallback {
-      return super.setNotificationCallback(characteristic)
+        return super.setNotificationCallback(characteristic)
     }
 
     public override fun removeNotificationCallback(characteristic: BluetoothGattCharacteristic?) {
-      super.removeNotificationCallback(characteristic)
+        super.removeNotificationCallback(characteristic)
     }
 
     public override fun enableNotifications(characteristic: BluetoothGattCharacteristic?): WriteRequest {
         return super.enableNotifications(characteristic)
     }
 
+    public override fun readRssi(): ReadRssiRequest {
+        return super.readRssi()
+    }
 }
